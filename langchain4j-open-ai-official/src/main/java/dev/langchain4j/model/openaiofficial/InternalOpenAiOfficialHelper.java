@@ -29,7 +29,9 @@ import com.openai.models.chat.completions.ChatCompletionContentPartImage;
 import com.openai.models.chat.completions.ChatCompletionContentPartInputAudio;
 import com.openai.models.chat.completions.ChatCompletionContentPartText;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.chat.completions.ChatCompletionFunctionTool;
 import com.openai.models.chat.completions.ChatCompletionMessage;
+import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import com.openai.models.chat.completions.ChatCompletionMessageToolCall;
 import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
@@ -318,13 +320,13 @@ class InternalOpenAiOfficialHelper {
             }
 
             List<ChatCompletionMessageToolCall> toolCalls = aiMessage.toolExecutionRequests().stream()
-                    .map(it -> ChatCompletionMessageToolCall.builder()
+                    .map(it -> ChatCompletionMessageToolCall.ofFunction(ChatCompletionMessageFunctionToolCall.builder()
                             .id(it.id())
-                            .function(ChatCompletionMessageToolCall.Function.builder()
+                            .function(ChatCompletionMessageFunctionToolCall.Function.builder()
                                     .name(it.name())
                                     .arguments(it.arguments())
                                     .build())
-                            .build())
+                            .build()))
                     .collect(toList());
 
             return ChatCompletionMessageParam.ofAssistant(ChatCompletionAssistantMessageParam.builder()
@@ -403,9 +405,9 @@ class InternalOpenAiOfficialHelper {
             functionDefinitionBuilder.strict(true);
         }
 
-        return ChatCompletionTool.builder()
+        return ChatCompletionTool.ofFunction(ChatCompletionFunctionTool.builder()
                 .function(functionDefinitionBuilder.build())
-                .build();
+                .build());
     }
 
     private static FunctionParameters toOpenAiParameters(ToolSpecification toolSpecification, boolean strict) {
@@ -468,12 +470,21 @@ class InternalOpenAiOfficialHelper {
     }
 
     private static ToolExecutionRequest toToolExecutionRequest(ChatCompletionMessageToolCall toolCall) {
-        ChatCompletionMessageToolCall.Function function = toolCall.function();
-        return ToolExecutionRequest.builder()
-                .id(toolCall.id())
-                .name(function.name())
-                .arguments(function.arguments())
+        if (toolCall.isFunction()) {
+            var functionToolCall = toolCall.asFunction();
+            return ToolExecutionRequest.builder()
+                .id(functionToolCall.id())
+                .name(functionToolCall.function().name())
+                .arguments(functionToolCall.function().arguments())
                 .build();
+        }
+
+        var functionToolCall = toolCall.asCustom();
+        return ToolExecutionRequest.builder()
+            .id(functionToolCall.id())
+            .name(functionToolCall.custom().name())
+            .arguments(functionToolCall.custom().input())
+            .build();
     }
 
     static OpenAiOfficialTokenUsage tokenUsageFrom(CreateEmbeddingResponse.Usage openAiUsage) {
